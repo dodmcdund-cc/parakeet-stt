@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-clipboard-manager = "2"
@@ -25,10 +25,17 @@ reqwest = { version = "0.12", features = ["multipart"] }
 cpal = "0.15"
 rodio = "0.19"
 enigo = "0.3"
-hotkey = "0.2"
+hotkey = "0.3"
 clipboard = "0.5"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 dirs = "5"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11-dl = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.24"
 
