@@ -1,21 +1,2 @@
-# Build artifacts
-/target/
-
-# Python
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-
-# Environment
-.env
-.env.local
-
-# OS
-.DS_Store
-Thumbs.db
-
-# WAV files (temp recordings)
-*.wav
-
-# Model cache (downloaded by transformers)
+Cargo.lock
+target
