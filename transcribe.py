@@ -5,26 +5,42 @@ Called by the Rust binary. Runs Parakeet-TDT-v3 inference on a 16kHz mono WAV.
 Usage: python3 transcribe.py <path_to_wav>
 Output: JSON {text, language, duration_s}
   - text:      lowercased transcription
-  - language:  ISO 639-3 code (e.g. "eng", "fra", "spa"), from MMS-LID-256
+  - language:  ISO 639-3 code (e.g. "eng", "fra", "spa"), from langdetect on the transcription ("und" if uncertain)
   - duration_s: input audio length
 """
 
 import sys
 import os
 import json
+import re
 from pathlib import Path
 import soundfile as sf
 import torch
 import numpy as np
-from transformers import AutoModel, AutoProcessor, Wav2Vec2ForSequenceClassification, AutoFeatureExtractor
+from transformers import AutoModel, AutoProcessor
+from langdetect import DetectorFactory, detect_langs
+
+# In TDT output <blank> marks word boundaries (not silence), so it must become a space.
+_BLANK_RE = re.compile(r"<blank>")
+
+DetectorFactory.seed = 0  # deterministic langdetect
 
 MODEL_NAME = "nvidia/parakeet-tdt-0.6b-v3"
-LID_MODEL_NAME = "facebook/mms-lid-256"
 CACHE_DIR = Path(__file__).parent / "models"
 CACHE_DIR.mkdir(exist_ok=True)
 os.environ.setdefault("HF_HOME", str(CACHE_DIR))
 
-# Load models once at startup (module-level cache)
+# ISO 639-1 → ISO 639-3 for the languages Parakeet-TDT-v3 supports.
+ISO_639_1_TO_3 = {
+    "en": "eng", "fr": "fra", "es": "spa", "de": "deu", "it": "ita",
+    "pt": "por", "nl": "nld", "pl": "pol", "ru": "rus", "uk": "ukr",
+    "cs": "ces", "sk": "slk", "sl": "slv", "hr": "hrv", "bg": "bul",
+    "ro": "ron", "hu": "hun", "el": "ell", "da": "dan", "sv": "swe",
+    "no": "nor", "fi": "fin", "et": "est", "lv": "lav", "lt": "lit",
+    "mt": "mlt", "ca": "cat", "ga": "gle",
+}
+
+# Load model once at startup (module-level cache)
 print(f"Loading {MODEL_NAME} (cache: {CACHE_DIR})...", file=sys.stderr)
 processor = AutoProcessor.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
 model = AutoModel.from_pretrained(
@@ -34,12 +50,7 @@ model = AutoModel.from_pretrained(
     device_map="cpu",
 )
 model.eval()
-
-print(f"Loading {LID_MODEL_NAME}...", file=sys.stderr)
-lid_feature_extractor = AutoFeatureExtractor.from_pretrained(LID_MODEL_NAME, cache_dir=CACHE_DIR)
-lid_model = Wav2Vec2ForSequenceClassification.from_pretrained(LID_MODEL_NAME, cache_dir=CACHE_DIR)
-lid_model.eval()
-print("Models ready.", file=sys.stderr)
+print("Model ready.", file=sys.stderr)
 
 # Warm-up
 _dummy = np.zeros(16000, dtype=np.float32)
@@ -71,20 +82,28 @@ def main():
         output = model.generate(**inputs)
 
     transcription = processor.batch_decode(output.sequences)[0]
+    cleaned = _BLANK_RE.sub(" ", transcription)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-    # Language identification (3-letter ISO 639-3 codes, e.g. "eng", "fra")
-    lid_inputs = lid_feature_extractor(audio_array, sampling_rate=16000, return_tensors="pt")
-    with torch.no_grad():
-        lid_logits = lid_model(**lid_inputs).logits
-    language = lid_model.config.id2label[torch.argmax(lid_logits, dim=-1).item()]
+    # Language identification via langdetect on the transcription.
+    # Requires >20 chars and top-prob >0.5 to be considered reliable; else "und".
+    language = "und"
+    if len(cleaned) > 20:
+        try:
+            candidates = detect_langs(cleaned)
+            top = candidates[0]
+            if top.prob > 0.5:
+                language = ISO_639_1_TO_3.get(top.lang, top.lang)
+        except Exception:
+            pass
 
     result = {
-        "text": transcription.lower().strip(),
+        "text": cleaned.lower(),
         "language": language,
         "duration_s": round(duration, 2),
     }
 
-    print(json.dumps(result))
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":
