@@ -1,4 +1,5 @@
 pub mod hotkey;
+pub mod text_injector;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
