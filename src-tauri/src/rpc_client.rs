@@ -79,22 +79,26 @@ fn encode_wav(samples: &[f32]) -> Vec<u8> {
 
     let mut wav = Vec::with_capacity(44 + data_size as usize);
 
+    // RIFF header
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&file_size.to_le_bytes());
     wav.extend_from_slice(b"WAVE");
 
+    // fmt chunk
     wav.extend_from_slice(b"fmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&16u32.to_le_bytes()); // chunk size
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM format
     wav.extend_from_slice(&channels.to_le_bytes());
     wav.extend_from_slice(&sample_rate.to_le_bytes());
     wav.extend_from_slice(&byte_rate.to_le_bytes());
     wav.extend_from_slice(&block_align.to_le_bytes());
     wav.extend_from_slice(&bits_per_sample.to_le_bytes());
 
+    // data chunk
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data_size.to_le_bytes());
 
+    // PCM 16-bit samples
     for &sample in samples {
         let clamped = sample.clamp(-1.0, 1.0);
         let pcm = (clamped * i16::MAX as f32) as i16;
