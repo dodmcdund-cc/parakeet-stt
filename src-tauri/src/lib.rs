@@ -1,15 +1,11 @@
-pub mod audio;
 pub mod app_state;
+pub mod audio;
 pub mod commands;
 pub mod hotkey;
 pub mod rpc_client;
 pub mod text_injector;
 
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tracing;
-
-use app_state::{AppController, AppState};
+pub use audio::{is_recording, rms, start_recording, stop_recording};
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -20,11 +16,11 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tracing_subscriber::fmt::init();
 
-    let app_state = Arc::new(Mutex::new(AppState::new(
+    let app_state = std::sync::Arc::new(tokio::sync::Mutex::new(app_state::AppState::new(
         "http://127.0.0.1:8973",
         "auto",
     )));
-    let controller = Arc::new(AppController::new(app_state.clone()));
+    let controller = std::sync::Arc::new(app_state::AppController::new(app_state.clone()));
 
     {
         let health_ctrl = controller.clone();
@@ -38,8 +34,8 @@ pub fn run() {
         });
     }
 
-    let audio = Arc::new(Mutex::new(audio::StubAudioCapture::new()));
-    let injector = Arc::new(Mutex::new(text_injector::StubTextInjector));
+    let audio = std::sync::Arc::new(tokio::sync::Mutex::new(audio::StubAudioCapture::new()));
+    let injector = std::sync::Arc::new(tokio::sync::Mutex::new(text_injector::StubTextInjector));
 
     let mut hotkey_manager = hotkey::StubHotkeyManager::new();
     {
@@ -79,7 +75,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--flag-here"]),
         ))
-.manage(app_state.clone())
+        .manage(app_state.clone())
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::get_app_state,
