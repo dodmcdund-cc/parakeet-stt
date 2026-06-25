@@ -34,6 +34,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 | RAM | ~2 GB free (for model loading) |
 | Disk | ~3 GB (model + dependencies) |
 
+### Linux Dependencies
+
+Tauri requires GTK 3 and related system libraries:
+
+```bash
+sudo apt install libgtk-3-dev libpango1.0-dev libatk1.0-dev libgdk-pixbuf2.0-dev libcairo2-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+```
+
 ## Installation
 
 ### 1. Clone the repository

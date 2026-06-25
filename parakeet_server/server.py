@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 import uvicorn
 
@@ -38,17 +38,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-@app.get("/")
-async def root():
-    return {
-        "name": "ParakeetServer",
-        "version": "1.0.0",
-        "model": "nvidia/parakeet-tdt-0.6b-v3",
-    }
+api = APIRouter(prefix="/api")
 
 
-@app.get("/health")
+@api.get("/health")
 async def health():
     if transcriber is None:
         return JSONResponse(
@@ -64,14 +57,14 @@ async def health():
     }
 
 
-@app.get("/model/status")
+@api.get("/model/status")
 async def model_status():
     if transcriber is None:
         return {"loaded": False, "loading": False, "error": "Server not initialized", "model_name": None}
     return transcriber.get_status()
 
 
-@app.post("/model/load")
+@api.post("/model/load")
 async def model_load():
     if transcriber is None:
         raise HTTPException(status_code=503, detail="Server not initialized")
@@ -79,7 +72,7 @@ async def model_load():
     return {"status": "loaded", "model_name": "nvidia/parakeet-tdt-0.6b-v3"}
 
 
-@app.post("/transcribe")
+@api.post("/transcribe")
 async def transcribe(
     audio: UploadFile = File(...),
     language: str = Form("auto"),
@@ -98,6 +91,9 @@ async def transcribe(
     except Exception as e:
         logger.error(f"Transcription error: {e}")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+
+app.include_router(api)
 
 
 if __name__ == "__main__":
