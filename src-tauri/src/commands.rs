@@ -4,7 +4,7 @@ use serde::Serialize;
 use tauri::State;
 use tracing;
 
-use crate::app_state::{AppState, State};
+use crate::app_state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppStateSnapshot {

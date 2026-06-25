@@ -29,16 +29,6 @@
       "csp": null
     }
   },
-  "capabilities": [
-    {
-      "identifier": "default",
-      "description": "Default capabilities",
-      "windows": ["main"],
-      "permissions": [
-        "core:default"
-      ]
-    }
-  ],
   "bundle": {
     "active": true,
     "targets": "all",
