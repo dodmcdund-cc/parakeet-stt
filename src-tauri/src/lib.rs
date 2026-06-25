@@ -3,7 +3,10 @@ pub mod audio;
 pub mod commands;
 pub mod hotkey;
 pub mod rpc_client;
+pub mod sound;
 pub mod text_injector;
+
+use crate::hotkey::HotkeyManager;
 
 pub use audio::{is_recording, rms, start_recording, stop_recording};
 
