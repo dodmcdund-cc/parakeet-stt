@@ -7,6 +7,7 @@ pub mod sound;
 pub mod text_injector;
 
 use crate::hotkey::HotkeyManager;
+use crate::commands::ManagedState;
 
 pub use audio::{is_recording, rms, start_recording, stop_recording};
 
@@ -79,10 +80,20 @@ pub fn run() {
             Some(vec!["--flag-here"]),
         ))
         .manage(app_state.clone())
+        .manage(ManagedState::new())
+        .manage(audio.clone())
+        .manage(injector.clone())
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::get_app_state,
             commands::check_health,
+            commands::start_recording,
+            commands::stop_recording,
+            commands::get_status,
+            commands::get_settings,
+            commands::save_settings,
+            commands::check_server_health,
+            commands::inject_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
