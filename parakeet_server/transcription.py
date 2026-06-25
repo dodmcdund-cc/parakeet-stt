@@ -2,7 +2,7 @@
 Parakeet-TDT-0.6B-v3 transcription pipeline wrapper.
 
 Model card: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
-Architecture: FastConformer-Transducer (CTC/Transducer hybrid)
+Architecture: FastConformer-Transducer (Transducer)
 
 Supported languages:
   Bulgarian (bg), Croatian (hr), Czech (cs), Danish (da), Dutch (nl),
@@ -13,6 +13,7 @@ Supported languages:
 """
 
 import io
+import re
 import time
 import logging
 from typing import Optional
@@ -20,9 +21,15 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 import torch
-from transformers import AutoModelForCTC, AutoProcessor, pipeline
+from transformers import AutoModel, AutoProcessor
+from langdetect import DetectorFactory, detect_langs
 
 logger = logging.getLogger("parakeet_transcription")
+
+# In TDT output <blank> marks word boundaries, so it must become a space.
+_BLANK_RE = re.compile(r"<blank>")
+
+DetectorFactory.seed = 0  # deterministic langdetect
 
 LANGUAGE_MAP = {
     "bg": "bulgarian",
@@ -65,14 +72,15 @@ class ParakeetTranscriber:
     ):
         self.model_name = model_name
         self.device = device
-        self._pipeline = None
+        self._model = None
+        self._processor = None
         self._loading = False
         self._loaded = False
         self._load_error: Optional[str] = None
         self.torch_version = torch.__version__
 
     def is_loaded(self) -> bool:
-        return self._loaded and self._pipeline is not None
+        return self._loaded and self._model is not None and self._processor is not None
 
     def get_status(self) -> dict:
         return {
@@ -93,31 +101,19 @@ class ParakeetTranscriber:
         try:
             logger.info(f"Loading {self.model_name} on {self.device}...")
 
-            processor = AutoProcessor.from_pretrained(self.model_name)
-            model = AutoModelForCTC.from_pretrained(
+            self._processor = AutoProcessor.from_pretrained(self.model_name)
+            self._model = AutoModel.from_pretrained(
                 self.model_name,
                 torch_dtype=torch.float32,
                 device_map=self.device,
             )
-            model.eval()
+            self._model.eval()
 
-            self._pipeline = pipeline(
-                "automatic-speech-recognition",
-                model=model,
-                tokenizer=processor.tokenizer,
-                feature_extractor=processor,
-                torch_dtype=torch.float32,
-                device=self.device,
-                chunk_length_s=30,
-                return_timestamps=True,
-            )
-
-            logger.info("Warming up pipeline with silence...")
-            dummy_audio = np.zeros(16000, dtype=np.float32)
-            _ = self._pipeline(
-                {"array": dummy_audio, "sampling_rate": 16000},
-                generate_kwargs={"language": "en"},
-            )
+            logger.info("Warming up model with silence...")
+            dummy = np.zeros(16000, dtype=np.float32)
+            inputs = self._processor(dummy, sampling_rate=16000, return_tensors="pt")
+            with torch.no_grad():
+                _ = self._model.generate(**inputs)
             logger.info("Warm-up complete.")
 
             self._loaded = True
@@ -146,7 +142,7 @@ class ParakeetTranscriber:
         Returns:
             dict with keys: text, language, segments, duration_seconds, inference_time_ms
         """
-        if not self._loaded or self._pipeline is None:
+        if not self._loaded or self._model is None or self._processor is None:
             raise RuntimeError("Model not loaded")
 
         try:
@@ -171,34 +167,39 @@ class ParakeetTranscriber:
         if max_val > 0:
             audio_array = audio_array / max_val
 
-        lang_code = language if language != "auto" else None
-
         start_time = time.perf_counter()
 
-        result = self._pipeline(
-            {"array": audio_array, "sampling_rate": 16000},
-            generate_kwargs={"language": lang_code} if lang_code else {},
-            return_timestamps=True,
-        )
+        inputs = self._processor(audio_array, sampling_rate=16000, return_tensors="pt")
+        with torch.no_grad():
+            output = self._model.generate(**inputs)
 
         inference_time = (time.perf_counter() - start_time) * 1000
 
-        text = result.get("text", "").strip()
-        detected_lang = result.get("language", language if language != "auto" else "en")
+        transcription = self._processor.batch_decode(output.sequences)[0]
+        text = _BLANK_RE.sub(" ", transcription)
+        text = re.sub(r"\s+", " ", text).strip().lower()
 
-        segments = []
-        if "chunks" in result:
-            for chunk in result["chunks"]:
-                segments.append({
-                    "start": chunk.get("timestamp", (0, 0))[0],
-                    "end": chunk.get("timestamp", (0, 0))[1],
-                    "text": chunk.get("text", "").strip(),
-                })
+        # Language detection via langdetect on the transcription.
+        # Requires >20 chars and top-prob >0.5 to be considered reliable; else "und".
+        if language != "auto":
+            detected_lang = language
+        elif len(text) > 20:
+            try:
+                candidates = detect_langs(text)
+                top = candidates[0]
+                if top.prob > 0.5:
+                    detected_lang = top.lang  # ISO 639-1 directly
+                else:
+                    detected_lang = "und"
+            except Exception:
+                detected_lang = "und"
+        else:
+            detected_lang = "und"
 
         return {
             "text": text,
             "language": detected_lang,
-            "segments": segments,
+            "segments": [],
             "duration_seconds": round(duration, 2),
             "inference_time_ms": round(inference_time, 1),
         }
